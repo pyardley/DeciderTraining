@@ -1,6 +1,5 @@
 unsloth_compiled_cache/
 outputs/
-results/
 decider-0.8b-lora/
 __pycache__/
 *.py[cod]

@@ -1,6 +1,6 @@
 # Blog source notes
 
-Raw material for a post about installing Unsloth on Windows, training Decider 0.8B on a GTX 1650 Ti, and comparing it with the untrained model. Numbers below were measured in this project on 10 October 2026. Do not fill the accuracy section until `compare.py` has been run. The install steps in `unsloth_windows_setup_guide.md` came from Gemini and were not re-run here. What was checked is that the resulting environment trains.
+Raw material for a post about installing Unsloth on Windows, training Decider 0.8B on a GTX 1650 Ti, and comparing it with the untrained model. Training numbers are from 10–11 October 2026. The accuracy table is from `compare.py` on 11 October 2026. The install steps in `unsloth_windows_setup_guide.md` came from Gemini and were not re-run here. What was checked is that the resulting environment trains.
 
 Repo: https://github.com/pyardley/DeciderTraining
 
@@ -9,7 +9,7 @@ Repo: https://github.com/pyardley/DeciderTraining
 - Unsloth 2026.10.3 runs natively on this Windows 11 machine and trains a decision model.
 - The GPU is a 4GB GTX 1650 Ti. It has no bfloat16, so this Qwen3.5 model trains in float32.
 - A steady training step takes about 70 seconds. The trainer reported `train_runtime` of 73,420 seconds (20 hours 24 minutes) for 280 steps. That wall clock includes the machine sleeping: one step sat for about 99 minutes, and another for about 12.5 hours. The stepping itself is about five and a half hours, plus a short evaluation and calibration at the end.
-- Accuracy before and after is still unmeasured. `compare.py` scores the typed-decisions test split, which training does not use.
+- On the 400-case test split, accuracy went from 0.326 untrained to 0.792 trained. That is agreement with the dataset's teacher, not correctness against the world. The dataset card's reference points on the full set are a majority baseline of 0.520, a factor ceiling of 0.704, and teacher self-agreement of 0.735. This run is a specialist on these four workflows, so it is not a zero-shot comparison with Jev.
 
 ## Machine
 
@@ -133,17 +133,30 @@ He fitted that with temperature scaling on the 1,000 calibration chats, not on t
 
 What carries over to this Decider run: the same three measures, and the same rule that the test split is not used to train or to fit confidence. This run's calibration is the temperature fit on the 80 held-out training rows. `compare.py` reports accuracy and expected calibration error, and writes `results\compare.html`. That page includes the radial chart from the Laya video: one dot per test case, sitting on the option the model chose, teal when that option is the gold label and red when it is not. The center number is accuracy for the selected workflow and question, and the gold arc is that same share of the circle. Untrained and trained are a switch, because this run does not have a score after every training step. The page also draws one dot per test question by confidence, with a movable gate. The gate table is the same shape as Walsh's 97-to-36 count. Here the untrained and trained models can pick different options, so the gate is an operating picture of each model, not a pure before-and-after of temperature scaling. Walsh also kept a simple classifier in the comparison, which this project does not have.
 
-## Accuracy comparison, not run yet
+## Accuracy comparison
 
-`compare.py` loads the untrained model and the trained adapters one at a time, because both do not fit in 4GB together.
+`compare.py` finished at 12:30 local time on 11 October 2026, exit code 0. It took 2,321 seconds. Both models were scored one at a time. None of the 2,000 test decisions were skipped. 30 of the 400 cases were longer than 1,024 tokens, so the end of those states was cut, the same rule as training.
 
-Untrained means the same starting point as `Training.py`: `Mapika/decider-0.8b`, a freshly initialized decision head, and LoRA at step 0, with `random_state` 3407. It does not mean Decider's original letter-logit readout.
+Untrained means the same starting point as `Training.py`: `Mapika/decider-0.8b`, a freshly initialized decision head, and LoRA at step 0, with `random_state` 3407. It does not mean Decider's original letter-logit readout. Trained means `decider-0.8b-lora`.
 
-Trained means `decider-0.8b-lora`. The script refuses to start until that folder contains `joint_head.safetensors`.
+Accuracy is the share of decisions whose top option matches the gold label.
 
-It reports accuracy, calibration error (ECE), and whole-case accuracy, plus accuracy by question type and by workflow. It also records load time, dataset build time, and per-case scoring time (mean, median, min, max, p95, with the first case separated as warmup). One case is one forward pass. With the default batch of 1, that median is the local number to set beside a warm Jev request. Tokenization is not included. Results are written to `results\compare.json`, and the same run writes `results\compare.html`, a standalone page in the style of the Laya video: a radial chart of which option the model chose, confidence dots, a gate slider, accuracy bars, and a calibration curve. Expect on the order of an hour for both models on this GPU.
+| | n | untrained | trained | change |
+| --- | ---: | ---: | ---: | ---: |
+| overall | 2000 | 0.326 | 0.792 | +0.466 |
+| choice | 600 | 0.197 | 0.748 | +0.552 |
+| score | 800 | 0.269 | 0.765 | +0.496 |
+| noul | 600 | 0.532 | 0.873 | +0.342 |
+| agent_trace_observability | 500 | 0.338 | 0.736 | +0.398 |
+| customer_service | 500 | 0.290 | 0.830 | +0.540 |
+| invoice_processing | 500 | 0.316 | 0.832 | +0.516 |
+| security_incidents | 500 | 0.360 | 0.772 | +0.412 |
 
-Paste the `compare.py` table here after it runs, and only then put accuracy numbers in the post.
+Calibration error (ECE): untrained 0.012, trained 0.023. Whole-case accuracy, every question in a case right: untrained 0.013, trained 0.388.
+
+Median forward time per case, after leaving the first case out as warmup: 2.749 seconds for both models. Mean: 2.809 seconds untrained, 2.741 seconds trained. That is GPU time for one case. Tokenizing and loading the model are not included, and it is not a full cloud-request latency.
+
+The page is `results\compare.html`. The JSON is `results\compare.json`. Neither is in git.
 
 ## Files
 

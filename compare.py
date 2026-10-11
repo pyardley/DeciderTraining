@@ -150,45 +150,48 @@ def timed_logits(model, tokenizer, items: list, batch_size: int):
     model.eval()
     logits, questions, case_seconds = [], [], []
     if torch.cuda.is_available():
+        torch.cuda.empty_cache()
         torch.cuda.synchronize()
-    for start in range(0, len(items), batch_size):
-        chunk = items[start : start + batch_size]
-        batch = collate(chunk)
-        batch.pop("target")
-        inputs = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        started = time.perf_counter()
-        with torch.autocast(device.type, dtype = amp_dtype, enabled = amp_dtype is not None):
-            z, _ = model(**inputs)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        z = z.float().cpu()
-        each = (time.perf_counter() - started) / len(chunk)
-        case_seconds.extend([each] * len(chunk))
-        flat = []
-        for item in chunk:
-            source = (item.get("source") or {}).get("questions") or {}
-            names = list(source)
-            for index, (target, label, qtype) in enumerate(
-                zip(item["targets"], item["labels"], item["qtypes"])
-            ):
-                name = names[index] if index < len(names) else None
-                options = _option_labels(source[name]) if name is not None else None
-                # A pick index is only meaningful when it addresses this option list.
-                if options is None or len(options) != len(target):
-                    name, options = None, None
-                flat.append((target, label, qtype, item["row"], name, options))
-        for row, (target, label, qtype, record_row, name, options) in enumerate(flat):
-            logits.append(z[row, : len(target)])
-            questions.append({
-                "target": target,
-                "label": label,
-                "qtype": laya_type[qtype],
-                "row": record_row,
-                "question": name,
-                "options": options,
-            })
+    # no_grad matches Unsloth's own scorer. Keeping the graph allocated the 4GB card on the first case.
+    with torch.no_grad():
+        for start in range(0, len(items), batch_size):
+            chunk = items[start : start + batch_size]
+            batch = collate(chunk)
+            batch.pop("target")
+            inputs = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            started = time.perf_counter()
+            with torch.autocast(device.type, dtype = amp_dtype, enabled = amp_dtype is not None):
+                z, _ = model(**inputs)
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            z = z.float().cpu()
+            each = (time.perf_counter() - started) / len(chunk)
+            case_seconds.extend([each] * len(chunk))
+            flat = []
+            for item in chunk:
+                source = (item.get("source") or {}).get("questions") or {}
+                names = list(source)
+                for index, (target, label, qtype) in enumerate(
+                    zip(item["targets"], item["labels"], item["qtypes"])
+                ):
+                    name = names[index] if index < len(names) else None
+                    options = _option_labels(source[name]) if name is not None else None
+                    # A pick index is only meaningful when it addresses this option list.
+                    if options is None or len(options) != len(target):
+                        name, options = None, None
+                    flat.append((target, label, qtype, item["row"], name, options))
+            for row, (target, label, qtype, record_row, name, options) in enumerate(flat):
+                logits.append(z[row, : len(target)])
+                questions.append({
+                    "target": target,
+                    "label": label,
+                    "qtype": laya_type[qtype],
+                    "row": record_row,
+                    "question": name,
+                    "options": options,
+                })
     model.train(was_training)
     return logits, questions, case_seconds
 
